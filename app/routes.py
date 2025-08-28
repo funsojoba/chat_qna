@@ -25,7 +25,8 @@ def chat_ai():
         return jsonify({"error": "Missing required field 'q'"}), 400
     
     message = data["q"]
+    session_id = data.get("session_id", "default_session")
 
-    response = process_user_chat(message, provider)
+    response = process_user_chat(session_id, message, provider)
 
     return jsonify(response), 200

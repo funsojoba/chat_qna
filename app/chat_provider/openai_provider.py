@@ -4,97 +4,90 @@ import tiktoken
 from openai import OpenAI
 from app.chat_provider import ChatProvider
 
-
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 
-
-
 class OpenAiChatProvider(ChatProvider):
-    """OpenAI chat provider implementation."""
-    
-    def __init__(self):
+    """OpenAI chat provider implementation using the Responses API."""
+
+    def __init__(self, model="gpt-4.1"):
         self.client = OpenAI(api_key=OPENAI_API_KEY)
-        
+        self.model = model
 
     def _get_call_analysis_schema(self):
+        """
+        JSON schema to ensure the model always returns a structured response.
+        """
         return {
             "type": "object",
             "properties": {
                 "response": {
                     "type": "string",
-                    "additionalProperties": False,
+                    "description": "The assistant's response to the user."
                 }
             },
-            "required": [
-                "response",
-            ],
+            "required": ["response"],
             "additionalProperties": False,
         }
 
-    def _analyze_call_transcript(self, chat_message: str):
+    def _chat_with_ai(self, chat_message: str, history: list = None):
         """
-        You are an expert chat assitant, take the user message and return a valid and detailed JSON response.
+        Calls OpenAI's Responses API and returns a structured JSON response.
 
         Args:
-            chat_message (str): The message user sent to the AI assistant
-
-        Returns:
-            dict: A dictionary containing the analysis results or an error message.
+            chat_message (str): The latest user message.
+            history (list): Previous conversation messages.
         """
         try:
-            # Create a system message with the instructions
+            # Create a system prompt
             system_message = """
-            You are an expert chat assitant, take the user message and return a valid and detailed JSON response.
-
-            Format your response as JSON with the requested structure.
+            You are an expert chat assistant. Take the user's message and return a valid,
+            helpful, and structured JSON response based on the schema provided.
             """
 
-            enc = tiktoken.encoding_for_model("gpt-4o")
-            tokens = enc.encode(system_message + chat_message)
-            print(f"Token count: {len(tokens)}")
+            # Combine history + current message
+            messages = [{"role": "system", "content": system_message}]
+            if history:
+                messages.extend(history)
+            messages.append({"role": "user", "content": chat_message})
 
-            # Make the API call using the new responses endpoint with input array
+            # Token count for debugging (optional)
             try:
-                response = self.client.responses.create(
-                    model="gpt-4.1",
-                    input=[
-                        {"role": "system", "content": system_message},
-                        {"role": "user", "content": chat_message},
-                    ],
-                    text={
-                        "format": {
-                            "type": "json_schema",
-                            "name": "user_chat",
-                            "schema": self._get_call_analysis_schema(),
-                            "strict": True,
-                        }
-                    },
-                )
+                enc = tiktoken.encoding_for_model("gpt-4o")
+                tokens = enc.encode(system_message + chat_message)
+                print(f"Token count: {len(tokens)}")
+            except Exception:
+                pass  # If tiktoken fails, ignore — doesn't break the chat flow
 
-                # Extract and parse the JSON response
-                analysis_text = response.output_text
-                analysis_json = json.loads(analysis_text)
+            # Call the OpenAI Responses API
+            response = self.client.responses.create(
+                model=self.model,
+                input=messages,
+                text={
+                    "format": {
+                        "type": "json_schema",
+                        "name": "user_chat",
+                        "schema": self._get_call_analysis_schema(),
+                        "strict": True,
+                    }
+                },
+            )
 
-                return True, analysis_json
-            except Exception as api_error:
-                print(f"API error: {str(api_error)}")
-                return False, {
-                    "error": "Failed to analyze transcript. Please try again later."
-                }
+            # Extract structured JSON output
+            analysis_text = response.output_text
+            analysis_json = json.loads(analysis_text)
 
-        except Exception as e:
-            # For prototype, return a simple error and fallback response
-            print(f"Error analyzing transcript: {str(e)}")
-            return False, {
-                "error": "An error occurred while processing your request. Please try again later."
-            }
+            return True, analysis_json
 
-    def chat(self, message: str) -> dict:
-        success, analysis = self._analyze_call_transcript(message)
+        except Exception as api_error:
+            print(f"API error: {str(api_error)}")
+            return False, {"error": "Failed to get a valid response from OpenAI."}
+
+    def chat(self, message: str, history: list = None) -> dict:
+        """
+        Public method that handles AI chat requests.
+        """
+        success, analysis = self._chat_with_ai(message, history)
         if success:
             return analysis
-        else:
-            return {"error": analysis.get("error", "Unknown error occurred")}
-
-
+        return {"error": analysis.get("error", "Unknown error occurred")}
