@@ -15,16 +15,16 @@ def health_check():
 
 
 
-@api_blueprint.route("/chat", methods=["POST"])
+@api_blueprint.route("/api/chat", methods=["POST"])
 def chat_ai():
     data = request.get_json()
     
     provider = data.get("provider", "openai")
 
-    if not data or "q" not in data:
-        return jsonify({"error": "Missing required field 'q'"}), 400
+    if not data or "message" not in data:
+        return jsonify({"error": "Missing required field 'message'"}), 400
     
-    message = data["q"]
+    message = data["message"]
     session_id = data.get("session_id", "default_session")
 
     response = process_user_chat(session_id, message, provider)
